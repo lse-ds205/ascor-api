@@ -1,122 +1,161 @@
+# make sure to add regional output for companies with regional data
 import os
 import pandas as pd
-
-from fastapi import FastAPI
-from .models import CountryData, Metrics, Indicators, Area, Pillars
-
-
-df_assessments = pd.read_excel("./data/TPI ASCOR data - 13012025/ASCOR_assessments_results.xlsx")
-df_assessments['Assessment date'] = pd.to_datetime(df_assessments['Assessment date'])
-df_assessments['Publication date'] = pd.to_datetime(df_assessments['Publication date'])
-
-def __is_running_on_nuvolos():
-
-    hostname = os.getenv("HOSTNAME")
-    return hostname is not None and hostname.startswith('nv-')
-
-if __is_running_on_nuvolos():
-    app = FastAPI(root_path="/proxy/8000/")
-else:
-    app = FastAPI()
+from fastapi import FastAPI, HTTPException
+from .models import Yearly_carbon_intensity_values, Carbon_intensity, Current_cp_alignment, Previous_cp_alignment, Cp_alignment, Carbon_performance_summary, Carbon_performance, Mq_indicator, Level, Mq_score, Mq_summary, Management_quality, Company_info, Company
 
 
-@app.get("/")
-async def read_root():
-    return {"Hello": "World"}
+#load and clean corporate assessments data
+df_assessments = pd.read_csv("data\TPI sector data - All sectors - 20022025\Company_Latest_Assessments_5.0.csv")
+
+date_columns = ["MQ Publication Date", "MQ Assessment Date", "CP Publication Date", "CP Assessment Date"]
+df_assessments[date_columns] = df_assessments[date_columns].apply(pd.to_datetime)
 
 
-@app.get("/v1/country-data/{country}/{assessment_year}", response_model=CountryData)
-async def get_country_data(country: str, assessment_year: int):
+# add function documentation
 
-    #### filter data to match country-year request####
+# management quality functions
+def create_mq_indicator(mq_indicator, data): 
+    mq_indicator_col = data.filter(like = mq_indicator)
 
-    selected_row = (
-        (df_assessments["Country"] == country) &
-        (df_assessments['Assessment date'].dt.year == assessment_year)
-    )
+    mq_indicator_dict = {          #is this an efficient way to return the dictionary?
+        "indicator_id": mq_indicator,
+        "indicator_desc": mq_indicator_col.columns.split("|")[0],
+        "score": mq_indicator_col.iloc[0]
+        }
+    
+    return mq_indicator_dict
 
+def create_level(level, data):
+    level_cols = data.filter(like = level).columns
+    mq_indicator_names = [col.split("|")[0] for col in level_cols]
+    mq_indicator_list = [create_mq_indicator(mq_indicator, data) for mq_indicator in mq_indicator_names]
+
+    level_dict = {
+        "level": level,  #maybe just make this be the int part
+        "mq_indicators": mq_indicator_list
+    }
+
+    return level_dict
+
+def create_mq_score(data):
+    levels = ["L0", "L1", "L2", "L3", "L4", "L5"]
+    level_list = [create_level(level, data) for level in levels]
+
+    mq_score_dict = {"levels": level_list}
+
+    return mq_score_dict
+
+def create_mq_summary(data):
+    mq_summary_dict = {
+        "mq_publication_date": data["MQ Publication Date"].iloc[0],
+        "mq_assesment_date": data["MQ Assessment Date"].iloc[0],
+        "overall_level": data["Overall Level"].iloc[0],
+        "performance_compared_previous_year": data["Performance Compared to Previous Year"].iloc[0]
+    }
+
+    return mq_summary_dict
+
+def create_management_quality(data):
+    mq_dictionary = {
+        "mq_score" : create_mq_score(data),
+        "mq_summary" : create_mq_summary(data)
+    }
+
+    return mq_dictionary
+
+
+#carbon intensity functions
+
+def create_yearly_carbon_intensity(data, year):
+    year_cp_dictionary = {
+        "year" : year,                     #does it make sense to do this rather than year : value?
+        "value" : data[year].iloc[0]       #could be that column names are #year eg. #2014
+    }
+
+def create_carbon_intensity(data):
+    
+    #commentasdffffffffffffffffff
+    valid_years = data[[
+        col for col in data.columns if col.isdigit() and 2013 <= int(col) <= 2050
+        ]]
+
+    carbon_intensity_dict = {
+        "cutoff_year" : data["Cutoff Year"].iloc[0],
+        "cp_measurement_unit" : data["CP Measurement Unit"].iloc[0],
+        "yearly_carbon_intensity" : 
+            [create_yearly_carbon_intensity(data, year) for year in valid_years]   #is this correct indentation?
+    } 
+
+    return carbon_intensity_dict
+
+def create_current_cp_alignment(data):
+    latest_cp_alignment_dict = {
+        "current_years_with_target" : data["Years with Target"].iloc[0],
+        "current_cp_alignment_2025" : data["Carbon Performance Alignment 2025"].iloc[0],
+        "current_cp_alignment_2027" : data["Carbon Performance Alignment 2027"].iloc[0],
+        "current_cp_alignment_2035" : data["Carbon Performance Alignment 2035"].iloc[0],
+        "current_cp_alignment_2050" : data["Carbon Performance Alignment 2050"].iloc[0]
+    }
+
+    return latest_cp_alignment_dict
+
+def create_prev_cp_alignment(data):
+    prev_cp_alignment_dict = {
+        "prev_years_with_target" : data["Previous Years with Target"].iloc[0],
+        "prev_cp_alignment_2025" : data["Previous Carbon Performance Alignment 2025"].iloc[0],
+        "prev_cp_alignment_2027" : data["Previous Carbon Performance Alignment 2027"].iloc[0],
+        "prev_cp_alignment_2035" : data["Previous Carbon Performance Alignment 2035"].iloc[0],
+        "prev_cp_alignment_2050" : data["Previous Carbon Performance Alignment 2050"].iloc[0]
+    }
+
+    return prev_cp_alignment_dict
+
+def create_cp_alignment(data):
+    cp_alignment_dict = {
+        "assumptions" : data["Assumptions"].iloc[0],
+        "latest_cp_alignment" : create_current_cp_alignment(data),
+        "previous_cp_alignment" : create_prev_cp_alignment(data)
+    }
+
+    return cp_alignment_dict
+
+def create_cp_summary(data):
+    cp_summary_dict = {
+        "cp_publication_date" : data["CP Publication Date"].iloc[0],
+        "cp_assesment_date" : data["CP Assessment Date"].iloc[0],
+        "benchmark_id" : data["Benchmark ID"].iloc[0]
+    }
+
+    return cp_summary_dict
+
+def create_carbon_performance(data):
+    carbon_performance_dict = {
+        "carbon_performance_summary" : create_cp_summary(data),
+        "carbon_performance_alignment" : create_cp_alignment(data)
+    }
+
+    return carbon_performance_dict
+
+
+# what are the norms for labeling the url
+@app.get("/mq_indicator/{company}/{mq_indicator}", response_model = Mq_indicator)
+async def get_mq_indicator(company: str, mq_indicator: str):
+    
+    #filter data to get company
+    selected_row = df_assessments["Company Name"] == company
     data = df_assessments[selected_row]
 
-    data = data.fillna('')          #replace NAs as not valid in Json
 
-    remap_column_names = {          #remove . in column names
-        col: col.replace('.', '_')
-        for col in data.columns
-    }
-    data.rename(columns = remap_column_names, inplace=True)
+    if data.empty:
+        raise HTTPException(status_code=404, 
+                            detail=f"There is no data for company: {company} and mq_indicator: {mq_indicator}")
+
+    mq_indicator_dict = create_mq_indicator(mq_indicator, data)
+#ADD MORE DATA VALIDATION AS IF PUT IN Q6 THEN UNCLEAR WHAT LEVEL AND BREAKS IT!!!!
+    return Mq_indicator(**mq_indicator_dict)
 
 
-    #### functions to create different objects from dataset ####
-
-    def get_area(pillar, data):
-        pillar_name = pillar
-        area_columns = [
-            col for col in data.columns if pillar_name and 'area' in col
-            ]
-
-        for area in area_columns:
-            area_list = []
-            area_name = area[-4:]          #extracts just the part of column name describing area
-            assesment = data[area]
-            indicator = get_indicator(area, data)
-            individual_area = Area(
-                  name = area_name, assessment = assesment, indicators = indicator
-                  )
-            area_list.append(individual_area)
-        
-        return area_list
-
-    def get_indicator(area, data):
-        area_name = area 
-        indicator_columns = [
-            col for col in data.columns if area_name and 'indicator' in col
-            ]
-
-        for indicator in indicator_columns:
-            indicator_list = []
-            indicator_name = indicator[-6:]
-            assesment = data[indicator]
-            metrics = get_metric(indicator, data)
-            individual_indicator = Indicators(
-                  name = indicator_name, assessment = assesment, metrics = metrics
-                                              )
-            indicator_list.append(individual_indicator)
-
-        return indicator_list
-            
-    def get_metric(indicator, data):
-        indicator_name = indicator 
-        metric_columns = [
-            col for col in data.columns if indicator_name and 'metric' in col
-            ]
-
-        for metric in metric_columns:
-            metric_list = []
-            metric_name = metric[-8:]
-            value = str(data[metric].iloc[0])
-            individual_metric = Metrics(
-                  name = metric_name, value = value
-                                              )
-            metric_list.append(individual_metric)
-    
-        return metric_list
-    
-
-    ### create pilar object and call functions to construct output dictionary ###
-
-    pillar_names = ['EP', 'CP', 'CF']
-   
-    for pillar in pillar_names:
-        pillars_list = []
-        individual_pillar = Pillars(
-            name = pillar, areas = get_area(pillar, data)
-        )
-        pillars_list.append(individual_pillar)
-
-    output_dict = CountryData(
-        country = country,
-        assessment_year = assessment_year,
-        pillars = pillars_list,
-    )
-    
-    return output_dict 
+# add function documentation
+@app.get("/level/{company}{level}", response_model = Mq_indicator)
+async def get(company: str, mq_indicator: str):

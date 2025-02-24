@@ -1,0 +1,75 @@
+
+````
+{
+	company_name : "compay_name",
+	
+	company_info : {
+		geography : "geography",
+		geography_code : "geography_code",
+		sector : "sector",
+		CA100 Focus Company : boolean,
+		Large/Medium Classification : (large/medium),
+		ISINs : ISINs, 
+		SEDOL : SEDOL 
+		}, 
+	
+	management_quality : {
+		mq_summary : {
+			mq_publication_date : datetype,
+			mq_assesment_date : datetype,
+			overall_level : ,
+			performance_compared_previous_year : },
+		
+		mq_score : {
+			level_0 : {
+				mq_indicator : {
+					indicator_id : "Q1L0",
+					indicator_description : "Does the company ...",
+					score : (Yes, No, Not Applicable (only for Q12 which is only applicable for certain sectors))
+					...
+					
+							} ,
+			level_1 : [],
+			level_2 : [],
+			level_3 : [],
+			level_4 : [],
+			level_5 : []
+					}
+				}
+	}
+
+	carbon_perforamce : {
+		cp_summary : {
+			cp_publication_date : datetype,
+			cp_assesment_date : datetype,
+			benchmark_id : },
+	
+		cp_alignment : {
+			assumptions : string
+			latest_cp_alignment : {
+				years_with_targets : 
+				latest_cp_alignment_2025 :
+				latest_cp_alignment_2027 :
+				latest_cp_alignment_2035 :
+				latest_cp_alignment_2050 : 
+				}, 
+			previous_cp_alignment : {
+				previous_years_with_targets :
+				previous_cp_alignment_2025 :
+				previous_cp_alignment_2027 :
+				previous_cp_alignment_2035 :
+				previous_cp_alignment_2050 : 
+				},
+			carbon_intensity : {
+				cutoff_year : int,
+				cp_measurement_unit : 
+				yearly_carbon_intensity : {
+					2013 : int
+					2014 :int
+					...
+					2050 : int
+					}
+				}
+				
+}
+````
