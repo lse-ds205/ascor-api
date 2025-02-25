@@ -56,9 +56,11 @@ class Previous_cp_alignment(BaseModel):
 
 class Cp_alignment(BaseModel):
     assumptions : Optional[str] = None  #decide when want to be optional or not
-    latest_cp_alignment : Optional[Latest_cp_alignment] = None
+    latest_cp_alignment : Optional[Current_cp_alignment] = None
     previous_cp_alignment : Optional[Previous_cp_alignment] = None
+    carbon_intensity : Optional[Carbon_intensity] = None  #MAKE SURE THIS IS REFLECTED IN FUNCTIONS!!
 
+ 
 #overall carbon perforamnce class
 class Carbon_performance_summary(BaseModel):
     cp_publication_date : Optional[date] = None  
@@ -67,8 +69,23 @@ class Carbon_performance_summary(BaseModel):
 
 class Carbon_performance(BaseModel):
     carbon_performance_summary : Optional[Carbon_performance_summary] = None #may need to use List[]
-    latest_cp_alignment : Optional[Latest_cp_alignment] = None
+    latest_cp_alignment : Optional[Current_cp_alignment] = None
     previous_cp_alignment : Optional[Previous_cp_alignment] = None
+    cp_sector_benchmarks : Optional[Cp_sector_benchmarks] = None
+
+#extension classes
+
+#sector
+class Benchmark(BaseModel): #IMPLEMENT THIS INTO APP!!!!!
+    benchmark_id : str    #MAKE SURE TO ADD TO CARBON PERFORAMNCE FUNCTIONS AND ENDPOINTS AND CLASSES!!!
+    release_date : Optional[date] = None
+    senario_name : Optional[str] = None
+    region : Optional[str] = None
+    unit : Optional[str] = None
+    carbon_intesity : List[Yearly_carbon_intensity_values]
+
+class Cp_sector_benchmarks(BaseModel):
+    benchmarks : List[Benchmark]
 
 #Summary classes
 
@@ -86,3 +103,4 @@ class Company(BaseModel):
     company_info : Company_info
     carbon_performance : Carbon_performance
     management_quality : Management_quality
+
