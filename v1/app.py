@@ -9,7 +9,18 @@ from .models import Yearly_carbon_intensity_values, Carbon_intensity, Current_cp
 df_assessments = pd.read_csv("data\TPI sector data - All sectors - 20022025\Company_Latest_Assessments_5.0.csv")
 
 date_columns = ["MQ Publication Date", "MQ Assessment Date", "CP Publication Date", "CP Assessment Date"]
-df_assessments[date_columns] = df_assessments[date_columns].apply(pd.to_datetime)
+df_assessments[date_columns] = df_assessments[date_columns].applymap(pd.to_datetime)
+
+
+#function that raises http exeptions
+def raise_http_exception(data, company, variable):
+    if data.empty:  
+        raise HTTPException(status_code=404, 
+                            detail=f"There is no data on company: {company} 's variable: {variable}")
+    
+#function that extracts company data
+def get_company_data(company):
+    data = df_assessments[df_assessments["Company Name"] == company]
 
 
 # add function documentation
@@ -138,18 +149,40 @@ def create_carbon_performance(data):
     return carbon_performance_dict
 
 
+# company summary  functions
+
+def create_company_info(data):
+    company_info_dict = {
+        "geography" : data["Geography"].iloc[0],
+        "geography_code" : data["Geography Code"].iloc[0],
+        "sector" : data["Sector"].iloc[0],
+        "CA100_focus_company" : data["CA100 Focus Company"].iloc[0],
+        "l_m_class" : data["L/M Class"].iloc[0],
+        "isins" : data["ISINs"].iloc[0],
+        "sedol" : data["SEDOL"].iloc[0]
+    }
+
+    return company_info_dict
+
+def create_company(data):
+    company_dict = {
+        "company_name" : data["Company Name"].iloc[0],
+        "company_info" : create_company_info(data),
+        "carbon_performance" : create_carbon_performance(data),
+        "management_quality" : create_management_quality(data)
+    }
+
+    return company_dict
+
+
+#Management Quality functiosn!!!!
+
 # what are the norms for labeling the url
-@app.get("/mq_indicator/{company}/{mq_indicator}", response_model = Mq_indicator)
+@app.get("/companies/{company}/management-quality/indicator/{mq_indicator}", response_model = Mq_indicator)
 async def get_mq_indicator(company: str, mq_indicator: str):
     
-    #filter data to get company
-    selected_row = df_assessments["Company Name"] == company
-    data = df_assessments[selected_row]
-
-
-    if data.empty:
-        raise HTTPException(status_code=404, 
-                            detail=f"There is no data for company: {company} and mq_indicator: {mq_indicator}")
+    data = get_company_data(company)
+    raise_http_exception(data, company, mq_indicator)
 
     mq_indicator_dict = create_mq_indicator(mq_indicator, data)
 #ADD MORE DATA VALIDATION AS IF PUT IN Q6 THEN UNCLEAR WHAT LEVEL AND BREAKS IT!!!!
@@ -157,5 +190,144 @@ async def get_mq_indicator(company: str, mq_indicator: str):
 
 
 # add function documentation
-@app.get("/level/{company}{level}", response_model = Mq_indicator)
-async def get(company: str, mq_indicator: str):
+@app.get("/companies/{company}/management-quality/level/{level}", response_model = Level)
+async def get_level(company: str, level: str):     #maybe make level be an int rather than L5
+
+    data = get_company_data(company)
+    raise_http_exception(data, company, level)
+
+    level_dict = create_level(level, data)
+    return Level(**level_dict)
+
+
+@app.get("/companies/{company}/management-quality/score", response_model = Mq_score)
+async def get_management_quality_score(company: str):
+
+    data = get_company_data(company)
+    raise_http_exception(data, company, "management-quality score") ##double check that this HTTPs outputs correct word in errro!!
+
+    mq_score_dict = create_mq_score(data)
+    return Mq_score(**mq_score_dict)
+
+
+@app.get("/companies/{company}/management-quality/summary", response_model = Mq_summary)
+async def get_mq_summary(company: str):
+
+    data = get_company_data(company)
+    raise_http_exception(data, company, "management-quality summary")
+
+    mq_summary_dict = create_mq_summary(data)
+    return Mq_summary(**mq_summary_dict)
+
+@app.get("/companies/{company}/management-quality", response_model = Management_quality)
+async def get_management_quality(company: str):
+
+    data = get_company_data(company)
+    raise_http_exception(data, company, "management-quality")
+
+    mq_dict = create_management_quality(data)
+    return Management_quality(**mq_dict)
+
+
+#Carbon Performance endpoint functions
+
+@app.get("/companies/{company}/carbon-performance/carbon-intensity/{year}", 
+         response_model = Yearly_carbon_intensity_values)
+async def get_yearly_carbon_intensity(company: str, year: int):
+
+    data = get_company_data(company)
+    raise_http_exception(data, company, f"carbon intensity in year : {year}")
+
+    year_carbon_intesnity_dict = create_yearly_carbon_intensity(data)
+    return Yearly_carbon_intensity_values(**year_carbon_intesnity_dict)
+
+
+@app.get("/companies/{company}/carbon-performance/carbon-intensity", 
+         response_model = Carbon_intensity)
+async def get_carbon_intensity(company: str):
+
+    data = get_company_data(company)
+    raise_http_exception(data, company, "carbon intensity")
+
+    carbon_intensity_dict = create_carbon_intensity(data)
+    return Carbon_intensity(**carbon_intensity_dict)
+
+
+@app.get("/companies/{company}/carbon-performance/alignment/current", 
+         response_model = Current_cp_alignment)
+async def get_current_cp_alignment(company: str):
+
+    data = get_company_data(company)
+    raise_http_exception(data, company, "current carbon performance alignment")
+
+    current_cp_alignment_dict = create_current_cp_alignment(data)
+    return Current_cp_alignment(**current_cp_alignment_dict)
+
+
+@app.get("/companies/{company}/carbon-performance/alignment/previous", 
+         response_model = Previous_cp_alignment)
+async def get_previous_cp_alignment(company: str):
+
+    data = get_company_data(company)
+    raise_http_exception(data, company, "previous carbon performance alignment")
+
+    prev_cp_alignment_dict = create_prev_cp_alignment(data)
+    return Previous_cp_alignment(**prev_cp_alignment_dict)
+
+
+@app.get("/companies/{company}/carbon-performance/alignment", 
+         response_model = Cp_alignment)
+async def get_cp_alignment(company: str):
+
+    data = get_company_data(company)
+    raise_http_exception(data, company, "carbon performance alignment")
+
+    cp_alignment_dict = create_cp_alignment(data)
+    return Cp_alignment(**cp_alignment_dict)
+
+
+@app.get("/companies/{company}/carbon-performance/summary", 
+         response_model = Carbon_performance_summary)
+async def get_cp_summary(company: str):
+
+    data = get_company_data(company)
+    raise_http_exception(data, company, "summary of carbon performance")
+
+    cp_summary_dict = create_cp_summary(data)
+    return Carbon_performance_summary(**cp_summary_dict)
+
+
+@app.get("/companies/{company}/carbon-performance", response_model = Carbon_performance)
+async def get_carbon_performance(company: str):
+
+    data = get_company_data(company)
+    raise_http_exception(data, company, "carbon performance")
+
+    cp_dict = create_carbon_performance(data)
+    return Carbon_performance(**cp_dict)
+
+
+#summary endpoints
+
+@app.get("/companies/{company}/company-info", response_model = Company_info)
+async def get_company_info(company: str):
+
+    data = get_company_data(company)
+    raise_http_exception(data, company, "company information")
+
+    company_info_dict = create_company_info(data)
+    return Company_info(**company_info_dict)
+
+
+@app.get("/companies/{company}", response_model = Company)
+async def get_company(company: str):
+
+    data = get_company_data(company)
+    
+    if data.empty:
+        raise HTTPException(status_code=404, 
+                            detail=f"There is no data on company: {company}")
+    
+    company_dict = create_company(data)
+    return Company(**company_dict)
+
