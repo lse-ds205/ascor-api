@@ -2,35 +2,50 @@
 import os
 import pandas as pd
 from fastapi import FastAPI, HTTPException
-from .models import Yearly_carbon_intensity_values, Carbon_intensity, Current_cp_alignment, Previous_cp_alignment, Cp_alignment, Carbon_performance_summary, Carbon_performance, Mq_indicator, Level, Mq_score, Mq_summary, Management_quality, Company_info, Company, Benchmark, Cp_sector_benchmarks
+from .models import Mq_indicator, Level, Mq_score, Mq_summary, Management_quality, \
+    Yearly_carbon_intensity_values, Carbon_intensity, Current_cp_alignment, \
+    Previous_cp_alignment, Cp_alignment, Benchmark, Cp_sector_benchmarks, \
+    Carbon_performance_summary, Carbon_performance, Company_info, Company
+
+app = FastAPI()
+
 
 
 #load and clean corporate assessments data
 df_assessments = pd.read_csv("data\TPI sector data - All sectors - 20022025\Company_Latest_Assessments_5.0.csv")
+
 assesment_date_cols = ["MQ Publication Date", "MQ Assessment Date", "CP Publication Date", "CP Assessment Date"]
-df_assessments[assesment_date_cols] = df_assessments[assesment_date_cols].applymap(pd.to_datetime)
+
+df_assessments[assesment_date_cols] = df_assessments[assesment_date_cols] \
+    .apply(lambda col: pd.to_datetime(col, format='%d/%m/%Y'))      #!!!!!!!!!!!!this needs to be resolved as outputs have time as well as date
+
+assesment_int_columns = ["Level", "History to Projection Cutoff Year"]
+df_assessments[assesment_int_columns] = df_assessments[assesment_int_columns].astype('Int64')
+ 
+df_assessments = df_assessments.applymap(lambda x: None if pd.isna(x) else x)   
+
 
 #load and clean sector benchmark data
 df_benchmarks = pd.read_csv("data\TPI sector data - All sectors - 20022025\Sector_Benchmarks_20022025.csv")
-df_benchmarks["Release date"] = pd.to_datetime(df_benchmarks["Release date"])
 
+df_benchmarks["Release date"] = df_benchmarks["Release date"]\
+    .apply(lambda col: pd.to_datetime(col, format='%d/%m/%Y'))
 
-
-
+df_benchmarks = df_benchmarks.applymap(lambda x: None if pd.isna(x) else x)
 #general purpose functions
-#function that raises http exeptions
-def raise_http_exception(data, company, variable):
-    if data.empty:  
-        raise HTTPException(status_code=404, 
-                            detail=f"There is no data on company: {company} 's variable: {variable}")
-    
+
 #function that extracts company assesments data
 def get_company_data(company):
     data = df_assessments[df_assessments["Company Name"] == company]
+    return data
 
-#function that raises http exception if there is no sector data
 
-
+#function that raises http exeptions
+def raise_http_exception(data, company, variable):
+    if data is None or data.empty:  
+        raise HTTPException(status_code=404, 
+                            detail=f"There is no data on company: {company} 's variable: {variable}")
+    
 
 
 # add function documentation
@@ -39,11 +54,13 @@ def get_company_data(company):
 def create_mq_indicator(mq_indicator, data): 
     mq_indicator_col = data.filter(like = mq_indicator)
 
-    mq_indicator_dict = {          #is this an efficient way to return the dictionary?
+    column_name = mq_indicator_col.columns[0]
+
+    mq_indicator_dict = {
         "indicator_id": mq_indicator,
-        "indicator_desc": mq_indicator_col.columns.split("|")[1],
-        "score": mq_indicator_col.iloc[0]
-        }
+        "indicator_desc": column_name.split("|")[1],
+        "score": mq_indicator_col.iloc[0, 0]
+    }
     
     return mq_indicator_dict
 
@@ -71,51 +88,49 @@ def create_mq_summary(data):
     mq_summary_dict = {
         "mq_publication_date": data["MQ Publication Date"].iloc[0],
         "mq_assesment_date": data["MQ Assessment Date"].iloc[0],
-        "overall_level": data["Overall Level"].iloc[0],
+        "overall_level": data["Level"].iloc[0],
         "performance_compared_previous_year": data["Performance Compared to Previous Year"].iloc[0]
     }
-
     return mq_summary_dict
 
 def create_management_quality(data):
     mq_dictionary = {
-        "mq_score" : create_mq_score(data),
-        "mq_summary" : create_mq_summary(data)
+        "mq_summary" : create_mq_summary(data),
+        "mq_score" : create_mq_score(data)
     }
-
     return mq_dictionary
+
 
 
 #carbon intensity functions
 
 def create_yearly_carbon_intensity(data, year):
-    year_cp_dictionary = {
-        "year" : year,                     #does it make sense to do this rather than year : value?
-        "value" : data[year].iloc[0]       #could be that column names are #year eg. #2014
+    value = data[str(year)].iloc[0]   #does it make sense to do this rather than year : value?
+    if pd.isna(value):        #this is necissary but i dont know why
+        value = None
+    year_cp_dictionary = {      #could be that column names are #year eg. #2014
+        "year": year,
+        "value": value
     }
-    
     return year_cp_dictionary
 
 
 def create_carbon_intensity(data):
     
-    #commentasdffffffffffffffffff
-    valid_years = data[[
-        col for col in data.columns if col.isdigit() and 2013 <= int(col) <= 2050
-        ]]
+    carbon_intensity_year_cols = [str(year) for year in range(2013, 2051)]
 
     carbon_intensity_dict = {
-        "cutoff_year" : data["Cutoff Year"].iloc[0],
-        "cp_measurement_unit" : data["CP Measurement Unit"].iloc[0],
+        "cp_measurement_unit" : data["CP Unit"].iloc[0],
+        "history_to_projection_cutoff_year" : data["History to Projection Cutoff Year"].iloc[0],
         "yearly_carbon_intensity" : 
-            [create_yearly_carbon_intensity(data, year) for year in valid_years]   #is this correct indentation?
+            [create_yearly_carbon_intensity(data, year) for year in carbon_intensity_year_cols]   #is this correct indentation?
     } 
 
     return carbon_intensity_dict
 
 def create_current_cp_alignment(data):
     latest_cp_alignment_dict = {
-        "current_years_with_target" : data["Years with Target"].iloc[0],
+        "current_years_with_target" : data["Years with targets"].iloc[0],
         "current_cp_alignment_2025" : data["Carbon Performance Alignment 2025"].iloc[0],
         "current_cp_alignment_2027" : data["Carbon Performance Alignment 2027"].iloc[0],
         "current_cp_alignment_2035" : data["Carbon Performance Alignment 2035"].iloc[0],
@@ -126,7 +141,7 @@ def create_current_cp_alignment(data):
 
 def create_prev_cp_alignment(data):
     prev_cp_alignment_dict = {
-        "prev_years_with_target" : data["Previous Years with Target"].iloc[0],
+        "prev_years_with_target" : data["Previous Years with targets"].iloc[0],
         "prev_cp_alignment_2025" : data["Previous Carbon Performance Alignment 2025"].iloc[0],
         "prev_cp_alignment_2027" : data["Previous Carbon Performance Alignment 2027"].iloc[0],
         "prev_cp_alignment_2035" : data["Previous Carbon Performance Alignment 2035"].iloc[0],
@@ -153,10 +168,59 @@ def create_cp_summary(data):
 
     return cp_summary_dict
 
+#sector benchmark functions
+
+#create benchmark
+def create_benchmark(data):
+    company_data = get_company_data(data["Company Name"].iloc[0])
+    benchmark_data = df_benchmarks[df_benchmarks["Benchmark ID"] == company_data["Benchmark ID"].iloc[0]]
+
+    benchmark_intensity_list = [Yearly_carbon_intensity_values(**create_yearly_carbon_intensity(benchmark_data, year)) for year in range(2013, 2051)]
+
+    benchmark_dict = {
+        "release_date": benchmark_data["Release date"].iloc[0],
+        "senario_name": benchmark_data["Scenario name"].iloc[0],
+        "region": benchmark_data["Region"].iloc[0],
+        "unit": benchmark_data["Unit"].iloc[0],
+        "carbon_intensity": benchmark_intensity_list
+      }  
+
+    return benchmark_dict
+
+
+
+# #this function needs work
+def create_cp_sector_benchmarks(data):
+    company_sector = data["Sector"].iloc[0]
+    sector_benchmarks_df = df_benchmarks[df_benchmarks["Sector name"] == company_sector]
+    
+    sector_benchmarks_list = []
+
+    for benchmark in sector_benchmarks_df["Benchmark ID"]:
+
+        benchmark_df = sector_benchmarks_list["Benchmark ID" == benchmark]
+
+        benchmark_intensity_list_2 = [create_yearly_carbon_intensity(benchmark_df, year) for year in range(2013, 2051)]
+        benchmark_intensity_list_2 = Yearly_carbon_intensity_values(**benchmark_intensity_list_2)
+
+        benchmark_dict_2 = {
+        "release_date" : benchmark_df["Release date"].iloc[0],
+        "senario_name" : benchmark_df["Scenario Name"].iloc[0],
+        "region" : benchmark_df["Region"].iloc[0],
+        "unit" : benchmark_df["Unit"].iloc[0],
+        "carbon_intensity" : benchmark_intensity_list_2
+    }
+        sector_benchmarks_list.append(benchmark_dict_2)
+
+    return sector_benchmarks_list
+
+
 def create_carbon_performance(data):
     carbon_performance_dict = {
         "carbon_performance_summary" : create_cp_summary(data),
-        "carbon_performance_alignment" : create_cp_alignment(data)
+        "carbon_performance_alignment" : create_cp_alignment(data),
+        "previous_cp_alignment" : create_prev_cp_alignment(data),
+        "cp_sector_benchmark" : create_benchmark(data)
     }
 
     return carbon_performance_dict
@@ -170,7 +234,7 @@ def create_company_info(data):
         "geography_code" : data["Geography Code"].iloc[0],
         "sector" : data["Sector"].iloc[0],
         "CA100_focus_company" : data["CA100 Focus Company"].iloc[0],
-        "l_m_class" : data["L/M Class"].iloc[0],
+        "l_m_class" : data["Large/Medium Classification"].iloc[0],
         "isins" : data["ISINs"].iloc[0],
         "sedol" : data["SEDOL"].iloc[0]
     }
@@ -187,42 +251,6 @@ def create_company(data):
 
     return company_dict
 
-
-
-#sector benchmark functions
-
-#create benchmark
-def create_benchmark(company, benchmark_id):
-    
-    company_data = get_company_data(company)
-    
-    benchmark_data = (
-        (df_benchmarks["Sector"] == company_data["Sector"]) &
-        (df_benchmarks["Benchmark ID"] == benchmark_id)
-    )
-
-    benchmark_intensity_list = [create_yearly_carbon_intensity(benchmark_data, year) for year in range(2013, 2051)]
-    benchmark_intensity_list = Yearly_carbon_intensity_values(**benchmark_intensity_list)
-
-    benchmark_dict = {
-        "benchmark_id" : benchmark_data["Benchmark ID"].iloc[0],
-        "release_date" : benchmark_data["Release date"].iloc[0],
-        "senario_name" : benchmark_data["Scenario Name"].iloc[0],
-        "region" : benchmark_data["Region"].iloc[0],
-        "unit" : benchmark_data["Unit"].iloc[0],
-        "carbon_intensity" : benchmark_intensity_list
-    }
-
-    return benchmark_dict
-
-def create_cp_sector_benchmarks(company):
-    company_sector_df = df_benchmarks[df_benchmarks["Sector"] == get_company_data(company)["Sector"].iloc[0]]
-    
-    benchmarks_dict = {
-        "benchmarks" : [create_benchmark(company, benchmark_id) for benchmark_id in company_sector_df["Benchmark ID"]]
-    }
-
-    return benchmarks_dict
 
 
 
@@ -284,7 +312,7 @@ async def get_yearly_carbon_intensity(company: str, year: int):
     data = get_company_data(company)
     raise_http_exception(data, company, f"carbon intensity in year : {year}")
 
-    return Yearly_carbon_intensity_values(**create_yearly_carbon_intensity(data))
+    return Yearly_carbon_intensity_values(**create_yearly_carbon_intensity(data, year))
 
 
 @app.get("/companies/{company}/carbon-performance/carbon-intensity", 
@@ -369,15 +397,8 @@ async def get_company(company: str):
     return Company(**create_company(data))
 
 
-#sector benchmark endpoint functions
-@app.get("/companies/{company}/sector-benchmarks/{benchmark_id}", response_model = Benchmark)
-async def get_benchmark(company: str, benchmark_id: str):
-    
-#add https expection hbere!!!!
-    return Benchmark(**create_benchmark(company, benchmark_id))
-
-
 @app.get("/companies/{company}/sector-benchmarks", response_model = Cp_sector_benchmarks)
 async def get_cp_sector_benchmarks(company: str):
-#add https expection hbere!!!!
-    return Cp_sector_benchmarks(**create_cp_sector_benchmarks(company)) 
+    data = get_company_data(company)
+    #add https expection hbere!!!!
+    return Cp_sector_benchmarks(**create_cp_sector_benchmarks(data)) 
